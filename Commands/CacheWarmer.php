@@ -77,18 +77,17 @@ class CacheWarmer extends Command
     /**
      * @var array
      */
-    protected $fetchedRoutes = array();
-
+    protected $fetchedRoutes = [];
 
     /**
-     * Constructor 
-     * 
+     * Constructor
+     *
      * @param \Magento\Framework\App\State $state
      * @param \Magento\Store\Model\StoreManagerInterface $storeManager
      */
     public function __construct(
-      State $state,
-      StoreManagerInterface $storeManager
+        State $state,
+        StoreManagerInterface $storeManager
     ) {
         $this->state = $state;
         $this->storeManager = $storeManager;
@@ -116,7 +115,7 @@ class CacheWarmer extends Command
      * 
      * @param string $html
      */
-    protected function getRoutesFromHtml($html) {
+    protected function getRoutesFromHtml($html, $route) {
         $collectedRoutes = array();
         
         $regexSafeUrl = str_replace('/', '\\/', preg_quote( $this->baseUrl));
@@ -130,7 +129,7 @@ class CacheWarmer extends Command
             }
 
             $collectedRoutes[] = $match;
-            $this->fetchedRoutes[$match] = true;
+            $this->fetchedRoutes[$match] = $route;
         }
 
         return $collectedRoutes;
@@ -186,6 +185,7 @@ class CacheWarmer extends Command
             $url = $this->baseUrl.html_entity_decode($route);
             $totalTimeSpent = microtime(true)-$this->startTime;
 
+
             $this->output->write(
                 'Count: <info>'.($this->warmedPages++).'</info>, ' .
                 ($this->abortAfterSec ? 'Done: <info>'.number_format(100*($totalTimeSpent/$this->abortAfterSec),2).'%</info>, ' : '') .
@@ -193,14 +193,25 @@ class CacheWarmer extends Command
                 'Fetching: <info>'.$url.'</info>'
             );
 
+            if(!empty($this->fetchedRoutes[$route])) {
+                $parent = $this->fetchedRoutes[$route];
+                $this->output->write(', Parent: <info>'.$this->fetchedRoutes[$route].'</info>');
+            }
+
             $startTime = microtime(true);
-            $html = file_get_contents($url);
-            $this->output->write(', Took: <info>' . ( microtime(true) - $startTime ) . ' seconds</info>');
-            $this->output->writeLn('');
+            try {
+                $html = file_get_contents($url);
+                $this->output->write(', Took: <info>' . ( microtime(true) - $startTime ) . ' seconds</info>');
+                $this->output->writeLn('');
 
-            usleep($this->delay*1000);
+                usleep($this->delay*1000);
 
-            $collectedRoutes = array_merge($collectedRoutes, $this->getRoutesFromHtml($html));
+                $collectedRoutes = array_merge($collectedRoutes, $this->getRoutesFromHtml($html, $route ? $route : '/'));
+            }
+            catch(\Exception $error) {
+                $this->output->write(', <error>Failed to fetch...</error>');
+                $this->output->writeLn('');
+            }
 
             if($this->abortAfterSec and $this->abortAfterSec < $totalTimeSpent) {
                 return false;
